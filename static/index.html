@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Document Summarizer (MCP)</title>
+    <!-- Use Google Fonts for a modern, beautiful typography -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Include Markdown Parser to render AI outputs safely -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="overlay"></div> <!-- For background glow effects -->
+    <div class="container">
+        <header>
+            <div class="logo-container">
+                <div class="logo-icon">📄➡️✨</div>
+            </div>
+            <h1>AI Document <span class="gradient-text">Summarizer</span></h1>
+            <p>Upload a PDF. Our Model Context Protocol (MCP) server extracts the text, and an LLM provides a summary in seconds.</p>
+        </header>
+
+        <main>
+            <!-- Upload Section -->
+            <section class="card upload-section slide-up">
+                <div class="step-badge">1</div>
+                <h2>Upload your PDF</h2>
+                <div class="file-drop-area" id="dropArea">
+                    <div class="upload-icon">📁</div>
+                    <p>Drag & Drop your file here or</p>
+                    <input type="file" id="pdfFile" accept=".pdf" class="hidden-input">
+                    <button class="btn browse-btn" onclick="document.getElementById('pdfFile').click()">Browse Files</button>
+                    <div id="fileInfo" class="file-info hidden">
+                        <span class="file-name"></span>
+                        <button class="remove-file" id="removeFileBtn">✕</button>
+                    </div>
+                </div>
+                <button id="uploadBtn" class="btn primary full-width" disabled>
+                    <span class="btn-text">Upload Document</span>
+                    <div class="spinner-small hidden"></div>
+                </button>
+                <p id="uploadStatus" class="status-msg"></p>
+            </section>
+
+            <!-- Summarize Section -->
+            <section class="card action-section slide-up delay-1">
+                <div class="step-badge">2</div>
+                <h2>Summarize & Chat</h2>
+                <div class="input-group">
+                    <label for="promptInput">What would you like to know?</label>
+                    <div class="input-wrapper">
+                        <input type="text" id="promptInput" value="Summarize this document in 3 bullet points." placeholder="E.g., What are the main conclusions?">
+                        <button id="summarizeBtn" class="btn primary" disabled>
+                            ✨ Generate
+                            <div class="btn-glow"></div>
+                        </button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Result Section -->
+            <section class="card result-section slide-up delay-2">
+                <div class="result-header">
+                    <h2>AI Summary</h2>
+                    <span class="badge mcp-badge">Powered by MCP</span>
+                </div>
+                
+                <div id="loadingState" class="hidden">
+                    <div class="pulsing-skeleton">
+                        <div class="skeleton-line skeleton-title"></div>
+                        <div class="skeleton-line"></div>
+                        <div class="skeleton-line"></div>
+                        <div class="skeleton-line width-60"></div>
+                    </div>
+                    <p class="loading-text">Analyzing text via MCP Server...</p>
+                </div>
+
+                <div id="summaryOutput" class="summary-box empty">
+                    <div class="empty-state">
+                        <span class="empty-icon">🤖</span>
+                        <p>Your summary will appear here once generated.</p>
+                    </div>
+                </div>
+            </section>
+        </main>
+        
+        <footer>
+            <p>AI File Reader Tool • Built with Python, FastAPI, and MCP SDK</p>
+        </footer>
+    </div>
+    <script src="script.js"></script>
+</body>
+</html>
