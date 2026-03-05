@@ -5,11 +5,12 @@ import sys
 import traceback
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
+import tempfile
+
 
 from groq import Groq
 from dotenv import load_dotenv
@@ -82,42 +83,30 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Upload directory setup
-UPLOAD_DIR = "uploads"
-os.makedirs(UPLOAD_DIR, exist_ok=True)
+# Serverless deployment doesn't support writing to an uploads directory persistently.
+# RapidAPI also requires a single endpoint. We merge Upload and Summarize here using /tmp/.
 
-class SummaryRequest(BaseModel):
-    filename: str
-    prompt: str = "Summarize this document"
-
-@app.post("/upload")
-async def upload_file(file: UploadFile = File(...)):
+@app.post("/api/analyze")
+async def analyze_document(
+    file: UploadFile = File(...), 
+    prompt: str = Form("Summarize this document")
+):
+    if not API_KEY:
+        raise HTTPException(status_code=500, detail="GROQ_API_KEY environment variable is not set on the server.")
+        
     if not file.filename.lower().endswith('.pdf'):
         raise HTTPException(status_code=400, detail="Only PDF files are supported.")
-    
-    # Save the file to the local uploads directory
-    file_path = os.path.abspath(os.path.join(UPLOAD_DIR, file.filename))
-    
-    try:
-        with open(file_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to save file: {str(e)}")
-        
-    return {"filename": file.filename, "message": "File uploaded successfully."}
-
-@app.post("/summarize")
-async def summarize(request: SummaryRequest):
-    if not API_KEY:
-        raise HTTPException(status_code=500, detail="GROQ_API_KEY environment variable is not set on the server. Please restarting the server with a valid key.")
-        
-    file_path = os.path.abspath(os.path.join(UPLOAD_DIR, request.filename))
-    
-    if not os.path.exists(file_path):
-        raise HTTPException(status_code=404, detail="File not found. Please upload it first.")
         
     if not mcp_session:
          raise HTTPException(status_code=500, detail="MCP Server is not running. Check server logs.")
+
+    # Save to a Vercel-friendly /tmp folder temporarily
+    try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+            shutil.copyfileobj(file.file, tmp)
+            file_path = tmp.name
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to save temporary file: {str(e)}")
 
     try:
         # Step 1: Tell the MCP Server to extract text from the PDF tool
@@ -134,12 +123,11 @@ async def summarize(request: SummaryRequest):
              
         # Step 2: Use AI to Summarize the extracted text
         print(f"[AI] Generating summary using Groq... (Extracted {len(extracted_text)} characters)")
-        # Limit text length to avoid token limits. Llama models on Groq support up to 128k natively, to be perfectly safe we preview at 50,000
         text_preview = extracted_text[:50000] 
-        prompt = f"{request.prompt}\n\nDocument Text:\n{text_preview}"
+        full_prompt = f"{prompt}\n\nDocument Text:\n{text_preview}"
         
         response = client.chat.completions.create(
-            messages=[{"role": "user", "content": prompt}],
+            messages=[{"role": "user", "content": full_prompt}],
             model="llama-3.3-70b-versatile"
         )
         print("[AI] Summary generated successfully.")
@@ -151,6 +139,10 @@ async def summarize(request: SummaryRequest):
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Error processing request: {str(e)}")
+    finally:
+        # Always clean up the temp file to stay under Vercel limits
+        if os.path.exists(file_path):
+            os.remove(file_path)
 
 # Mount static files to serve the frontend UI
 app.mount("/", StaticFiles(directory="static", html=True), name="static")

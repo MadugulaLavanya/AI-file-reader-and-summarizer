@@ -7,12 +7,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const fileNameDisplay = fileInfo.querySelector('.file-name');
     const removeFileBtn = document.getElementById('removeFileBtn');
     const statusMsg = document.getElementById('uploadStatus');
-    
+
     const summarizeBtn = document.getElementById('summarizeBtn');
     const promptInput = document.getElementById('promptInput');
     const summaryOutput = document.getElementById('summaryOutput');
     const loadingState = document.getElementById('loadingState');
-    
+
     let currentUploadedFilename = null;
 
     // --- Drag and Drop Logic ---
@@ -43,15 +43,15 @@ document.addEventListener('DOMContentLoaded', () => {
         handleFiles(files);
     });
 
-    fileInput.addEventListener('change', function() {
+    fileInput.addEventListener('change', function () {
         handleFiles(this.files);
     });
 
     function handleFiles(files) {
         if (files.length === 0) return;
-        
+
         const file = files[0];
-        
+
         // Validate it's a PDF
         if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
             showStatus('Please upload a valid PDF file.', 'error');
@@ -60,38 +60,38 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Show file info
         fileNameDisplay.textContent = file.name;
-        
+
         // UI toggle
         Array.from(dropArea.children).forEach(el => {
-            if(el.id !== 'fileInfo' && el.id !== 'pdfFile') el.classList.add('hidden');
+            if (el.id !== 'fileInfo' && el.id !== 'pdfFile') el.classList.add('hidden');
         });
         fileInfo.classList.remove('hidden');
-        
+
         // Enable upload
         uploadBtn.disabled = false;
         statusMsg.textContent = '';
-        
+
         // Attach file to an invisible variable so the upload process can find it easily
         fileInput.files = files; // this works if dt.files was attached, though not strictly required as we can keep it in state
     }
 
     removeFileBtn.addEventListener('click', (e) => {
         e.stopPropagation(); // prevent triggering click on parent
-        
+
         // Reset state
         fileInput.value = '';
         currentUploadedFilename = null;
-        
+
         // UI restore
         fileInfo.classList.add('hidden');
         Array.from(dropArea.children).forEach(el => {
-            if(el.id !== 'fileInfo' && el.id !== 'pdfFile') el.classList.remove('hidden');
+            if (el.id !== 'fileInfo' && el.id !== 'pdfFile') el.classList.remove('hidden');
         });
-        
+
         uploadBtn.disabled = true;
         summarizeBtn.disabled = true;
         statusMsg.textContent = '';
-        
+
         summaryOutput.classList.add('empty');
         summaryOutput.innerHTML = `
             <div class="empty-state">
@@ -106,70 +106,42 @@ document.addEventListener('DOMContentLoaded', () => {
         const file = fileInput.files[0];
         if (!file) return;
 
-        const formData = new FormData();
-        formData.append('file', file);
+        // Visual change only. Because of serverless, we send everything in step 2.
+        currentUploadedFilename = file.name;
+        showStatus('✓ PDF staged. Ready to generate summary.', 'success');
+        uploadBtn.disabled = true;
+        summarizeBtn.disabled = false;
 
         const btnText = uploadBtn.querySelector('.btn-text');
-        const spinner = uploadBtn.querySelector('.spinner-small');
-
-        try {
-            // UI Loading state
-            uploadBtn.disabled = true;
-            btnText.textContent = 'Uploading...';
-            spinner.classList.remove('hidden');
-            statusMsg.textContent = '';
-            
-            const response = await fetch('/upload', {
-                method: 'POST',
-                body: formData
-            });
-            
-            const data = await response.json();
-            
-            if (response.ok) {
-                currentUploadedFilename = data.filename;
-                showStatus('✓ PDF stored safely. Ready to summarize.', 'success');
-                summarizeBtn.disabled = false;
-            } else {
-                showStatus(data.detail || 'Upload failed.', 'error');
-                uploadBtn.disabled = false;
-            }
-        } catch (error) {
-            showStatus('🚨 Server connection failed.', 'error');
-            uploadBtn.disabled = false;
-        } finally {
-            btnText.textContent = 'Upload Document';
-            spinner.classList.add('hidden');
-        }
+        btnText.textContent = 'Document Staged';
     });
 
     // --- MCP / Summarization Process ---
     summarizeBtn.addEventListener('click', async () => {
         if (!currentUploadedFilename) return;
 
+        const file = fileInput.files[0];
+        if (!file) return;
+
         try {
             // UI state
             summarizeBtn.disabled = true;
             summaryOutput.classList.add('hidden');
             loadingState.classList.remove('hidden');
-            
-            const reqBody = {
-                filename: currentUploadedFilename,
-                prompt: promptInput.value || "Summarize this document"
-            };
-            
-            const response = await fetch('/summarize', {
+
+            const formData = new FormData();
+            formData.append('file', file);
+            formData.append('prompt', promptInput.value || "Summarize this document");
+
+            const response = await fetch('/api/analyze', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify(reqBody)
+                body: formData
             });
-            
+
             const data = await response.json();
-            
+
             summaryOutput.classList.remove('empty');
-            
+
             if (response.ok) {
                 // Parse markdown!
                 const htmlContent = marked.parse(data.summary);
