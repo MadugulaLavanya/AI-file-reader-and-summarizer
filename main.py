@@ -69,7 +69,7 @@ async def analyze_document(
         mcp_script = os.path.join(BASE_DIR, "mcp_server.py")
         
         server_params = StdioServerParameters(
-            command=sys.executable,
+            command="python",
             args=["-u", mcp_script],
             env=os.environ.copy()
         )
