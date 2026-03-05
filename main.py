@@ -28,52 +28,9 @@ if API_KEY:
     client = Groq(api_key=API_KEY)
 
 
-# Global variables to hold the MCP client connection
-mcp_client = None
-mcp_session = None
-
-async def init_mcp():
-    global mcp_client, mcp_session
-    # Point to the current python executable and the mcp_server.py file
-    # We use python -u to unbuffer stdout/stderr which helps with MCP
-    server_params = StdioServerParameters(
-        command=sys.executable,
-        args=["-u", "mcp_server.py"],
-        env=os.environ.copy()
-    )
-    
-    mcp_client = stdio_client(server_params)
-    read, write = await mcp_client.__aenter__()
-    
-    mcp_session = ClientSession(read, write)
-    await mcp_session.__aenter__()
-    await mcp_session.initialize()
-    print("✓ MCP Server (PDF Reader Tool) initialized and connected.")
-
-async def cleanup_mcp():
-    global mcp_client, mcp_session
-    if mcp_session:
-        await mcp_session.__aexit__(None, None, None)
-    if mcp_client:
-        await mcp_client.__aexit__(None, None, None)
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    # Startup sequence
-    print("Starting up application...")
-    if not API_KEY:
-        print("WARNING: GROQ_API_KEY environment variable is not set. Summarization will fail.")
-    try:
-        await init_mcp()
-    except Exception as e:
-        print(f"Error initializing MCP: {e}")
-        traceback.print_exc()
-    yield
-    # Shutdown sequence
-    print("Shutting down application...")
-    await cleanup_mcp()
-
-app = FastAPI(lifespan=lifespan)
+# In Vercel serverless, background processes and ASGI lifespan hooks are unreliable.
+# We will spin up the MCP connection cleanly per-request.
+app = FastAPI()
 
 # Add CORS Middleware just in case, though we'll serve static files directly
 app.add_middleware(
@@ -97,10 +54,8 @@ async def analyze_document(
     if not file.filename.lower().endswith('.pdf'):
         raise HTTPException(status_code=400, detail="Only PDF files are supported.")
         
-    if not mcp_session:
-         raise HTTPException(status_code=500, detail="MCP Server is not running. Check server logs.")
-
     # Save to a Vercel-friendly /tmp folder temporarily
+    file_path = None
     try:
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
             shutil.copyfileobj(file.file, tmp)
@@ -110,10 +65,22 @@ async def analyze_document(
 
     try:
         # Step 1: Tell the MCP Server to extract text from the PDF tool
-        print(f"[MCP Client] Calling tool 'extract_text' for {file_path}")
-        result = await mcp_session.call_tool("extract_text", arguments={"file_path": file_path})
+        BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+        mcp_script = os.path.join(BASE_DIR, "mcp_server.py")
         
-        extracted_text = result.content[0].text
+        server_params = StdioServerParameters(
+            command=sys.executable,
+            args=["-u", mcp_script],
+            env=os.environ.copy()
+        )
+        
+        # Spin up MCP locally per-request for Vercel 
+        async with stdio_client(server_params) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                print(f"[MCP Client] Calling tool 'extract_text' for {file_path}")
+                result = await session.call_tool("extract_text", arguments={"file_path": file_path})
+                extracted_text = result.content[0].text
         
         if extracted_text.startswith("Error"):
              raise HTTPException(status_code=500, detail=f"PDF extraction failed via MCP: {extracted_text}")
