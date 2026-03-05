@@ -19,6 +19,7 @@ load_dotenv()
 
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
+import mcp_server  # STRICTLY REQUIRED FOR VERCEL: Forces the serverless builder to bundle this file!
 
 # Environment variable for Groq API Key
 # The user needs to supply the key via a .env file or environment variable.
@@ -69,7 +70,7 @@ async def analyze_document(
         mcp_script = os.path.join(BASE_DIR, "mcp_server.py")
         
         server_params = StdioServerParameters(
-            command="python",
+            command=sys.executable or "python",
             args=["-u", mcp_script],
             env=os.environ.copy()
         )
